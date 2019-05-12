@@ -23,6 +23,8 @@ public class TCPSocketImpl extends TCPSocket {
         this.initSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
         this.timeout = 1000;
         this.otherPort = otherPort;
+        this.timer = new Timer(true);
+
         System.out.println("socket init seq #: " + initSeqNumber);
 
         handshake();
@@ -36,10 +38,11 @@ public class TCPSocketImpl extends TCPSocket {
         this.timeout = 1000;
         this.otherAckNumber = otherAckNumber;
         this.otherPort = otherPort;
+        this.timer = new Timer(true);
+
     }
 
     private void handshake() throws IOException {
-        this.timer = new Timer(true);
         this.timer.scheduleAtFixedRate(new HandShakeTask(), 0, this.timeout);
         while (true) {
             DatagramPacket packet = TCPUtils.receive(socket);
