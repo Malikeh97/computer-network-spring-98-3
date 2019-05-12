@@ -11,6 +11,9 @@ import java.security.NoSuchAlgorithmException;
 public abstract class TCPSocket implements CongestionWindowPlotter {
     public TCPSocket(String ip, int port) throws Exception {}
 
+    protected TCPSocket() {
+    }
+
     public abstract void send(String pathToFile) throws Exception;
 
     public final void sendAndLog(String pathToFile) throws Exception {

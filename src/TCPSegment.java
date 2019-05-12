@@ -43,7 +43,29 @@ public class TCPSegment {
 
 	@Override
 	public String toString() {
-		return intToBinary(srcPort, 16) +
+		return "TCPSegment{" +
+				"srcPort=" + srcPort +
+				", dstPort=" + dstPort +
+				", seqNumber=" + seqNumber +
+				", ackNumber=" + ackNumber +
+				", headerLength=" + headerLength +
+				", CWR=" + CWR +
+				", ECE=" + ECE +
+				", URG=" + URG +
+				", ACK=" + ACK +
+				", PSH=" + PSH +
+				", RST=" + RST +
+				", SYN=" + SYN +
+				", FIN=" + FIN +
+				", windowSize=" + windowSize +
+				", checksum=" + checksum +
+				", urgentDataPointer=" + urgentDataPointer +
+				", data='" + data + '\'' +
+				'}';
+	}
+
+	public byte[] toBytes() {
+		return (intToBinary(srcPort, 16) +
 				intToBinary(dstPort, 16) +
 				intToBinary(seqNumber, 32) +
 				intToBinary(ackNumber, 32) +
@@ -60,7 +82,7 @@ public class TCPSegment {
 				intToBinary(windowSize, 16) +
 				intToBinary(checksum, 16) +
 				intToBinary(urgentDataPointer, 16) +
-				data;
+				data).getBytes();
 	}
 
 	private static String intToBinary(int x, int bits) {

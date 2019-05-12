@@ -4,7 +4,7 @@ import java.net.InetAddress;
 
 public class TCPUtils {
 	public static void send(EnhancedDatagramSocket socket, InetAddress ip, int port, TCPSegment segment) {
-		byte[] buffer = segment.toString().getBytes();
+		byte[] buffer = segment.toBytes();
 		DatagramPacket packet = new DatagramPacket(buffer, buffer.length, ip, port);
 		try {
 			socket.send(packet);

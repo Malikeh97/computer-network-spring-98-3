@@ -1,6 +1,6 @@
+import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
-import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ThreadLocalRandom;
@@ -12,30 +12,48 @@ public class TCPSocketImpl extends TCPSocket {
     private int port;
     private int initSeqNumber;
     private int timeout;
-    private int serverAckNumber;
+    private int otherAckNumber;
+    private int otherPort;
+    private Timer timer;
 
-    public TCPSocketImpl(String ip, int port) throws Exception {
-        super(ip, port);
-        this.socket = new EnhancedDatagramSocket(12346);
-        this.ip = InetAddress.getByName(ip);
+    public TCPSocketImpl(int port, int otherPort) throws Exception {
+        this.socket = new EnhancedDatagramSocket(port);
+        this.ip = InetAddress.getLocalHost();
         this.port = port;
         this.initSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
         this.timeout = 1000;
-
+        this.otherPort = otherPort;
         System.out.println("socket init seq #: " + initSeqNumber);
-        Timer timer = new Timer(true);
-        timer.scheduleAtFixedRate(new HandShakeTask(), this.timeout, this.timeout);
+
+        handshake();
+    }
+
+    public TCPSocketImpl(EnhancedDatagramSocket socket, int port, int initSeqNumber, int otherAckNumber, int otherPort) throws Exception {
+        this.socket = socket;
+        this.ip = InetAddress.getLocalHost();
+        this.port = port;
+        this.initSeqNumber = initSeqNumber;
+        this.timeout = 1000;
+        this.otherAckNumber = otherAckNumber;
+        this.otherPort = otherPort;
+    }
+
+    private void handshake() throws IOException {
+        this.timer = new Timer(true);
+        this.timer.scheduleAtFixedRate(new HandShakeTask(), 0, this.timeout);
         while (true) {
             DatagramPacket packet = TCPUtils.receive(socket);
             TCPSegment segment = new TCPSegment(new String(packet.getData()));
 
-            if (segment.isSYN()) {
-                this.serverAckNumber = segment.getSeqNumber();
-                System.out.println("server ack #: " + serverAckNumber);
+            if (segment.isSYN() && segment.isACK()) {
+                this.otherAckNumber = segment.getSeqNumber();
+                System.out.println("server ack #: " + otherAckNumber);
                 segment = new TCPSegment();
+                segment.setACK(true);
                 segment.setSeqNumber(this.initSeqNumber + 1);
-                segment.setAckNumber(this.serverAckNumber + 1);
-                TCPUtils.send(socket, this.ip, port, segment);
+                segment.setAckNumber(this.otherAckNumber + 1);
+                TCPUtils.send(socket, this.ip, otherPort, segment);
+                timer.cancel();
                 break;
             }
         }
@@ -53,6 +71,7 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void close() throws Exception {
+        this.timer.cancel();
         this.socket.close();
     }
 
@@ -72,7 +91,7 @@ public class TCPSocketImpl extends TCPSocket {
             TCPSegment segment = new TCPSegment();
             segment.setSYN(true);
             segment.setSeqNumber(initSeqNumber);
-            TCPUtils.send(socket, ip, port, segment);
+            TCPUtils.send(socket, ip, otherPort, segment);
         }
     }
 }
