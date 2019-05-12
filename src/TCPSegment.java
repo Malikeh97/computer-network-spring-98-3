@@ -17,7 +17,9 @@ public class TCPSegment {
 	private int urgentDataPointer;
 	private String data;
 
-	public TCPSegment() {}
+	public TCPSegment() {
+		this.data = "";
+	}
 
 	public TCPSegment(String packet) {
 		this.srcPort = Integer.parseInt(packet.substring(0, 16), 2);

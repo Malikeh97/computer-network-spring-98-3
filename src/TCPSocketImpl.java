@@ -16,8 +16,8 @@ public class TCPSocketImpl extends TCPSocket {
 
     public TCPSocketImpl(String ip, int port) throws Exception {
         super(ip, port);
-        this.socket = new EnhancedDatagramSocket(port);
-        this.ip = InetAddress.getByAddress(ip.getBytes());
+        this.socket = new EnhancedDatagramSocket(12346);
+        this.ip = InetAddress.getByName(ip);
         this.port = port;
         this.initSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
         this.timeout = 1000;
