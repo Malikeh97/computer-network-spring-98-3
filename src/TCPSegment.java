@@ -13,8 +13,67 @@ public class TCPSegment {
 	private boolean SYN;
 	private boolean FIN;
 	private int windowSize;
+	private int checksum;
 	private int urgentDataPointer;
 	private String data;
+
+	public TCPSegment() {}
+
+	public TCPSegment(String packet) {
+		this.srcPort = Integer.parseInt(packet.substring(0, 16), 2);
+		this.dstPort = Integer.parseInt(packet.substring(16, 32), 2);
+		this.seqNumber = Integer.parseInt(packet.substring(32, 64), 2);
+		this.ackNumber = Integer.parseInt(packet.substring(64, 96), 2);
+		this.headerLength = Integer.parseInt(packet.substring(96, 100), 2);
+		this.CWR = binaryToBoolean(packet.substring(104, 105));
+		this.ECE = binaryToBoolean(packet.substring(105, 106));
+		this.URG = binaryToBoolean(packet.substring(106, 107));
+		this.ACK = binaryToBoolean(packet.substring(107, 108));
+		this.PSH = binaryToBoolean(packet.substring(108, 109));
+		this.RST = binaryToBoolean(packet.substring(109, 110));
+		this.SYN = binaryToBoolean(packet.substring(110, 111));
+		this.FIN = binaryToBoolean(packet.substring(111, 112));
+		this.windowSize = Integer.parseInt(packet.substring(112, 128), 2);
+		this.checksum = Integer.parseInt(packet.substring(128, 144), 2);
+		this.urgentDataPointer = Integer.parseInt(packet.substring(144, 160), 2);
+		this.data = packet.substring(160);
+	}
+
+	@Override
+	public String toString() {
+		return intToBinary(srcPort, 16) +
+				intToBinary(dstPort, 16) +
+				intToBinary(seqNumber, 32) +
+				intToBinary(ackNumber, 32) +
+				intToBinary(headerLength, 4) +
+				intToBinary(0, 4) +
+				booleanToBinary(CWR) +
+				booleanToBinary(ECE) +
+				booleanToBinary(URG) +
+				booleanToBinary(ACK) +
+				booleanToBinary(PSH) +
+				booleanToBinary(RST) +
+				booleanToBinary(SYN) +
+				booleanToBinary(FIN) +
+				intToBinary(windowSize, 16) +
+				intToBinary(checksum, 16) +
+				intToBinary(urgentDataPointer, 16) +
+				data;
+	}
+
+	private static String intToBinary(int x, int bits) {
+		String binary = Integer.toBinaryString(x);
+		binary = new String(new char[bits - binary.length()]).replace("\0", "0") + binary;
+		return binary;
+	}
+
+	private static String booleanToBinary(boolean x) {
+		return x ? "1" : "0";
+	}
+
+	private static boolean binaryToBoolean(String x) {
+		return x.equals("1");
+	}
 
 	public int getSrcPort() {
 		return srcPort;
@@ -126,6 +185,14 @@ public class TCPSegment {
 
 	public void setWindowSize(int windowSize) {
 		this.windowSize = windowSize;
+	}
+
+	public int getChecksum() {
+		return checksum;
+	}
+
+	public void setChecksum(int checksum) {
+		this.checksum = checksum;
 	}
 
 	public int getUrgentDataPointer() {
