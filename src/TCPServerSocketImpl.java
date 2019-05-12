@@ -7,58 +7,50 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
 
-    private EnhancedDatagramSocket dSocket;
+    private EnhancedDatagramSocket socket;
     private int initSeqNumber;
     private int timeout;
+    private InetAddress clientIP;
+    private int clientPort;
+    private int clientAckNumber;
 
     public TCPServerSocketImpl(int port) throws Exception {
         super(port);
-        this.dSocket = new EnhancedDatagramSocket(port);
+        this.socket = new EnhancedDatagramSocket(port);
         this.timeout = 1000;
         this.initSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
     }
 
     @Override
     public TCPSocket accept() throws Exception {
-		DatagramPacket packet = TCPUtils.receive(dSocket);
-
-		InetAddress clientIp = packet.getAddress();
-		int clientPort = packet.getPort();
-        TCPSegment segment = new TCPSegment(new String(packet.getData()));
-
-        if (segment.isSYN()) {
-            Timer timer = new Timer(true);
-            timer.scheduleAtFixedRate(new HandShakeTask(clientIp, clientPort, segment.getAckNumber()), this.timeout, this.timeout);
-
-            while (true) {
-            	packet = TCPUtils.receive(dSocket);
-            	segment = new TCPSegment(new String(packet.getData()));
-            	if (segment.isACK()) {
-            		System.out.println("---3-WAY HANDSHAKE ACCEPTED---");
-					timer.cancel();
-					break;
-				}
+		Timer timer = new Timer(true);
+		while (true) {
+			DatagramPacket packet = TCPUtils.receive(socket);
+			System.out.println("### accept packet: " + packet);
+			TCPSegment segment = new TCPSegment(new String(packet.getData()));
+			if (segment.isSYN()) {
+				this.clientIP = packet.getAddress();
+				this.clientPort = packet.getPort();
+				this.clientAckNumber = segment.getSeqNumber();
+				timer.cancel();
+				timer.scheduleAtFixedRate(new HandShakeTask(), this.timeout, this.timeout);
+			} else if (segment.isACK()) {
+				System.out.println("---3-WAY HANDSHAKE ACCEPTED---");
+				timer.cancel();
+				break;
 			}
-        }
-        return null;
+		}
+
+
+        return new TCPSocketImpl(this.clientIP.getHostAddress(), clientPort);
     }
 
     @Override
     public void close() throws Exception {
-        dSocket.close();
+        socket.close();
     }
 
     class HandShakeTask extends TimerTask {
-
-		private final InetAddress ip;
-		private final int port;
-		private final int ackNumber;
-
-		HandShakeTask(InetAddress ip, int port, int ackNumber) {
-    		this.ip = ip;
-    		this.port = port;
-    		this.ackNumber = ackNumber;
-		}
 
 		@Override
 		public void run() {
@@ -66,9 +58,9 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 			TCPSegment segment = new TCPSegment();
 			segment.setSYN(true);
 			segment.setSeqNumber(initSeqNumber);
-			segment.setAckNumber(ackNumber + 1);
+			segment.setAckNumber(clientAckNumber + 1);
 
-			TCPUtils.send(dSocket, ip, port, segment);
+			TCPUtils.send(socket, clientIP, clientPort, segment);
 		}
 	}
 }
