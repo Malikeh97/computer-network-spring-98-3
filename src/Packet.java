@@ -1,4 +1,4 @@
-public class TCPSegment {
+public class Packet {
 	private int srcPort;
 	private int dstPort;
 	private int seqNumber;
@@ -17,11 +17,12 @@ public class TCPSegment {
 	private int urgentDataPointer;
 	private String data;
 
-	public TCPSegment() {
+	public Packet() {
 		this.data = "";
 	}
 
-	public TCPSegment(String packet) {
+	public Packet(byte[] buffer) {
+		String packet = new String(buffer);
 		this.srcPort = Integer.parseInt(packet.substring(0, 16), 2);
 		this.dstPort = Integer.parseInt(packet.substring(16, 32), 2);
 		this.seqNumber = Integer.parseInt(packet.substring(32, 64), 2);
@@ -43,7 +44,7 @@ public class TCPSegment {
 
 	@Override
 	public String toString() {
-		return "TCPSegment{" +
+		return "Packet{" +
 				"srcPort=" + srcPort +
 				", dstPort=" + dstPort +
 				", seqNumber=" + seqNumber +

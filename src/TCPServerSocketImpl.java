@@ -1,4 +1,3 @@
-import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.util.Timer;
@@ -9,11 +8,11 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
     private EnhancedDatagramSocket socket;
     private int port;
-    private int initSeqNumber;
+    private int nextSeqNumber;
     private int timeout;
     private InetAddress clientIP;
     private int clientPort;
-    private int clientAckNumber;
+    private int expectedSeqNumber;
 	private Timer timer;
 
 	public TCPServerSocketImpl(int port) throws Exception {
@@ -21,8 +20,8 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         this.socket = new EnhancedDatagramSocket(port);
         this.port = port;
         this.timeout = 1000;
-        this.initSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
-        System.out.println(initSeqNumber);
+        this.nextSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
+        System.out.println(nextSeqNumber);
     }
 
     @Override
@@ -31,12 +30,12 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 		while (true) {
 			DatagramPacket packet = TCPUtils.receive(socket);
 			System.out.println("### accept packet: " + new String(packet.getData()));
-			TCPSegment segment = new TCPSegment(new String(packet.getData()));
+			Packet segment = new Packet(packet.getData());
 			System.out.println(segment.toString());
 			if (segment.isSYN()) {
 				this.clientIP = packet.getAddress();
 				this.clientPort = packet.getPort();
-				this.clientAckNumber = segment.getSeqNumber();
+				this.expectedSeqNumber = segment.getSeqNumber() + 1;
 				timer.cancel();
 				timer = new Timer(true);
 				timer.scheduleAtFixedRate(new HandShakeTask(), 0, this.timeout);
@@ -46,7 +45,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 				break;
 			}
 		}
-        return new TCPSocketImpl(socket, port, initSeqNumber, clientAckNumber, clientPort);
+        return new TCPSocketImpl(socket, port, nextSeqNumber, expectedSeqNumber, clientPort);
     }
 
     @Override
@@ -60,13 +59,14 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 		@Override
 		public void run() {
 			System.out.println("Server HandShake");
-			TCPSegment segment = new TCPSegment();
+			Packet segment = new Packet();
 			segment.setSYN(true);
 			segment.setACK(true);
-			segment.setSeqNumber(initSeqNumber);
-			segment.setAckNumber(clientAckNumber + 1);
+			segment.setSeqNumber(nextSeqNumber);
+			segment.setAckNumber(expectedSeqNumber);
 
 			TCPUtils.send(socket, clientIP, clientPort, segment);
+			nextSeqNumber++;
 		}
 	}
 }
