@@ -39,7 +39,7 @@ public class Packet {
 		this.windowSize = Integer.parseInt(packet.substring(112, 128), 2);
 		this.checksum = Integer.parseInt(packet.substring(128, 144), 2);
 		this.urgentDataPointer = Integer.parseInt(packet.substring(144, 160), 2);
-		this.data = packet.substring(160);
+		this.data = packet.substring(160, packet.indexOf('\0'));
 	}
 
 	@Override

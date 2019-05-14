@@ -2,10 +2,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class TCPSocketImpl extends TCPSocket {
@@ -19,12 +16,13 @@ public class TCPSocketImpl extends TCPSocket {
 	private int otherPort;
 	private Timer sendTimer;
 	private Timer receiveTimer;
-	private int base;
+	private int sendBase;
+	private int receiveBase;
 	private int windowSize = 5; // maybe need to change
 	private boolean isSender;
-	private final int DATA_SIZE = 1000;
-	private List<Packet> sendBuffer = new ArrayList<>(100);
-	private List<Packet> receiveBuffer = new ArrayList<>(100);
+	private final int DATA_SIZE = 1024;
+	private Map<Integer, Packet> sendBuffer = new HashMap<>();
+	private Map<Integer, Packet> receiveBuffer = new HashMap<>();
 
 	public TCPSocketImpl(int port, int otherPort) throws Exception {
 		this.socket = new EnhancedDatagramSocket(port);
@@ -32,11 +30,12 @@ public class TCPSocketImpl extends TCPSocket {
 		this.port = port;
 		this.nextSeqNumber = ThreadLocalRandom.current().nextInt(0, (int) Math.pow(2.0, 16.0));
 		this.otherPort = otherPort;
-		this.base = nextSeqNumber;
+		this.sendBase = nextSeqNumber;
 		this.isSender = true;
 
 		System.out.println("socket init seq #: " + nextSeqNumber);
-
+		System.out.println(port);
+		System.out.println(otherPort);
 		handshake();
 	}
 
@@ -47,8 +46,11 @@ public class TCPSocketImpl extends TCPSocket {
 		this.nextSeqNumber = nextSeqNumber;
 		this.expectedSeqNumber = expectedSeqNumber;
 		this.otherPort = otherPort;
-		this.base = nextSeqNumber;
+		this.sendBase = nextSeqNumber;
 		this.isSender = false;
+
+		System.out.println(port);
+		System.out.println(otherPort);
 	}
 
 	private void handshake() throws IOException {
@@ -60,6 +62,7 @@ public class TCPSocketImpl extends TCPSocket {
 
 			if (segment.isSYN() && segment.isACK()) {
 				this.expectedSeqNumber = segment.getSeqNumber() + 1;
+				this.receiveBase = this.expectedSeqNumber;
 				System.out.println("server ack #: " + expectedSeqNumber);
 				segment = new Packet();
 				segment.setACK(true);
@@ -80,12 +83,18 @@ public class TCPSocketImpl extends TCPSocket {
 			Packet packet = new Packet();
 			packet.setData(packetDatas.get(i));
 			packet.setSeqNumber(nextSeqNumber + i);
-			sendBuffer.add(packet);
+			sendBuffer.put(nextSeqNumber + i, packet);
 		}
-		System.out.println(packetDatas);
+		Packet packet = new Packet();
+		packet.setData("EOF");
+		packet.setSeqNumber(nextSeqNumber + packetDatas.size());
+		sendBuffer.put(nextSeqNumber + packetDatas.size(), packet);
+		System.out.println(sendBuffer);
+		System.out.println(sendBuffer.size());
 		if (this.sendTimer == null) {
 			for (int i = 0; i < windowSize; i++) {
-				if (nextSeqNumber < base + windowSize) {
+				if (sendBuffer.size() <= i) break;
+				if (nextSeqNumber < sendBase + windowSize) {
 					this.sendOnePacket(nextSeqNumber);
 				} else {
 					System.out.println("refuse packet");
@@ -97,11 +106,30 @@ public class TCPSocketImpl extends TCPSocket {
 				byte[] buffer = new byte[1408];
 				DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
 				this.socket.receive(datagramPacket);
-				Packet packet = new Packet(buffer);
+				packet = new Packet(buffer);
+//				System.out.println("### " + packet);
 				if (packet.isACK()) {
-					if (packet.getAckNumber() >= this.base) {
-						this.base = packet.getAckNumber();
+					if (packet.getAckNumber() >= this.sendBase) {
+//						System.out.println(this.sendBase);
+//						System.out.println();
+						for (int i = this.sendBase; i <= packet.getAckNumber(); i++)
+							this.sendBuffer.remove(i);
+						this.sendBase = packet.getAckNumber() + 1;
 						this.sendTimer.cancel();
+						System.out.println(sendBuffer.size());
+						System.out.println("!!!!!!! 1");
+						if (this.sendBuffer.isEmpty()) break;
+						System.out.println("!!!!!!! 2");
+						if (this.sendBase == this.nextSeqNumber) {
+							for (int i = 0; i < windowSize; i++) {
+								if (sendBuffer.size() <= i) break;
+								if (nextSeqNumber < sendBase + windowSize) {
+									this.sendOnePacket(nextSeqNumber);
+								} else {
+									System.out.println("refuse packet");
+								}
+							}
+						}
 						this.sendTimer = new Timer(true);
 						this.sendTimer.scheduleAtFixedRate(new ResendTask(), this.timeout, this.timeout);
 					}
@@ -123,8 +151,38 @@ public class TCPSocketImpl extends TCPSocket {
 	@Override
 	public void receive(String pathToFile) throws Exception {
 		FileOutputStream dest = new FileOutputStream(pathToFile,true);
-
-		// TODO
+		while (true) {
+			byte[] buffer = new byte[1408];
+			DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
+			this.socket.receive(datagramPacket);
+			Packet packet = new Packet(buffer);
+//			System.out.println(packet);
+//			System.out.println(expectedSeqNumber);
+			if (!packet.isACK()) {
+				if (packet.getSeqNumber() == this.expectedSeqNumber) {
+//					System.out.println("here");
+					if (!packet.getData().equals("EOF"))
+						dest.write(packet.getData().getBytes());
+					Packet ack = new Packet();
+					ack.setACK(true);
+					ack.setAckNumber(this.expectedSeqNumber);
+					buffer = ack.toBytes();
+					datagramPacket = new DatagramPacket(buffer, buffer.length, this.ip, this.otherPort);
+					this.socket.send(datagramPacket);
+					this.expectedSeqNumber++;
+					if (packet.getData().equals("EOF"))
+						break;
+				} else {
+					Packet ack = new Packet();
+					ack.setACK(true);
+					ack.setAckNumber(this.expectedSeqNumber - 1);
+					buffer = packet.toBytes();
+					datagramPacket = new DatagramPacket(buffer, buffer.length, this.ip, this.otherPort);
+					this.socket.send(datagramPacket);
+				}
+			}
+		}
+		dest.close();
 	}
 
 	@Override
@@ -154,14 +212,18 @@ public class TCPSocketImpl extends TCPSocket {
 			segment.setSeqNumber(nextSeqNumber);
 			TCPUtils.send(socket, ip, otherPort, segment);
 			nextSeqNumber++;
-			base++;
+			sendBase++;
 		}
 	}
 
 	class ResendTask extends TimerTask {
 		@Override
 		public void run() {
-			for (int i = base; i < nextSeqNumber; i++) {
+			System.out.println("%%%%%%");
+			System.out.println(sendBase);
+			System.out.println(nextSeqNumber);
+			for (int i = sendBase; i < nextSeqNumber; i++) {
+				if (sendBuffer.size() <= i - sendBase) break;
 				try {
 					sendOnePacket(i);
 				} catch (IOException e) {

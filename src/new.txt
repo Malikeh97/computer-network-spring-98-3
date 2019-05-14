@@ -1,3 +1,323 @@
-slm mn ali hastm
-salam bande malikeh hastm
-khodafez
+var running = false;
+var display;
+var contr;
+var sender;
+var receiver;
+var typewriter = true;
+var endToEndDelay = 1000;
+var paper;
+
+
+
+$(document).ready(function(){
+	checkFeatures({
+		inlinesvg: false,
+		canvas: true
+	});
+	
+	rangeInputCompability();
+});
+
+function Controller(){
+	this.getMethod = function(){
+		//var e = document.getElementById('method');
+		//return e.options[e.selectedIndex].value;
+		return $('input[name=method]:checked').val();
+	}
+	this.setMethod = function(){
+		console.log('switch method to '+this.getMethod());
+		initAnimation(this.getMethod());
+	}
+	
+	this.getSenderN = function(){
+		return parseInt(document.getElementById('senderN').value);
+	}
+	this.setSenderN = function(){
+		var n = this.getSenderN();
+		display.setN(n, sender.base);
+		sender.N = n;
+		if(typeof receiver.N != 'undefined')
+			receiver.N = n;
+	}
+	
+	this.getEndToEndDelay = function(){
+		return parseInt(document.getElementById('endToEndDelay').value);
+	}
+	this.setEndToEndDelay = function(){
+		endToEndDelay = this.getEndToEndDelay();
+	}
+	
+	this.getTimeout = function(){
+		return parseInt(document.getElementById('timeout').value);
+	}
+	this.setTimeout = function(){
+		sender.timeout = this.getTimeout();
+	}
+	
+	this.isPaused = false;
+	this.pause = function(){
+		if(this.isPaused === false){
+			if(this.running)
+				window.clearInterval(this.interval);
+			
+			$('.pkg').pause();
+			$.each(runningTimers, function(index, element){
+				element.pause();
+			});
+			$('.pkg').each(function(){
+				var t = $(this).children('canvas').data('timer');
+				if(typeof t != 'undefined')
+					t.pause();
+			});
+			if(typeof display.windowTimer != 'undefined' && typeof display.windowTimer.data('timer') != 'undefined')
+				display.windowTimer.data('timer').pause();
+			
+			this.isPaused = true;
+		}
+		else{
+			this.setPkgPerMin();
+			this.isPaused = false;
+			
+			$('.pkg').resume();
+			$.each(runningTimers, function(index, element){
+				element.start();
+			});
+			$('.pkg').each(function(){
+				var t = $(this).children('canvas').data('timer');
+				if(typeof t != 'undefined')
+					t.resume();
+			});
+			if(typeof display.windowTimer != 'undefined' && typeof display.windowTimer.data('timer') != 'undefined')
+				display.windowTimer.data('timer').resume();
+		}
+		document.getElementById('pause').value = (this.isPaused ? 'resume' : 'pause');
+	}
+	
+	
+	this.getPkgPerMin = function(){
+		return parseInt(document.getElementById('pkgPerMin').value);
+	}
+	this.setPkgPerMin = function(){
+		this.timeBetweenPkgs = 1/(this.getPkgPerMin()/60)*1000;
+		
+		if(this.running){
+			window.clearInterval(this.interval);
+			this.interval = window.setInterval('sender.send(1)', this.timeBetweenPkgs);
+		}
+	}
+	
+	this.running = false;
+	this.interval;
+	this.timeBetweenPkgs = 1000;
+	this.emit = function(){
+		sender.send(1);
+	}
+	this.startStop = function(){
+		if(this.running){
+			window.clearInterval(this.interval);
+		}
+		else{ // start
+			sender.send(1);
+			window.clearInterval(this.interval);
+			this.interval = window.setInterval('sender.send(1)', this.timeBetweenPkgs);
+			
+			disableFormItems(true);
+		}
+		this.running = !this.running;
+		
+		document.getElementById('start').value = (this.running ? 'stop' : 'start');
+	}
+	
+	this.allPacketsReceived = function(){
+		if(this.running)
+			return;
+		
+		disableFormItems(false);
+	}
+}
+
+
+/**
+ * a Packet
+ * @param seqnum the sequence number of the packet
+ */
+function Packet(seqnum, data){
+	this.seqnum = seqnum;
+	this.data = data;
+	this.timer = null;
+	
+	this.send = function(dst, timeout){
+		var self = this;
+		this.timer = new Timer(function(){
+			dst.receive(self);
+		}, timeout);
+	}
+	this.received = function(){
+		this.timer.stop();
+	}
+	this.kill = function(){
+		this.timer.stop();
+	}
+}
+
+/**
+ * this sender can send with the go back n protocol
+ */
+function SenderGBN(N){
+	this.partner; // the end point the packets go to
+	
+	this.base = 1;
+	this.nextseqnum = 1;
+	this.N = N;
+	this.pkt = new Array();
+	
+	this.timeout = 2000; // time until the timeout is fired
+	this.timer = null;
+	
+	// this method is called when a timeout occurs
+	this.timeoutHandler = function(){
+		console.log("timeout");
+		
+		// start a new timeout
+		var self = this;
+		this.timer = new Timer(
+			function(){
+				self.timeoutHandler();
+			}
+			, this.timeout
+		);
+		display.startWindowTimer(this.timeout);
+		
+		// resend all packets in the current window
+		for(var i = this.base; i < this.nextseqnum; i++){
+			console.log("send packet "+i);
+			this.pkt[i].send(this.partner, endToEndDelay);
+			
+			display.send(true, this.pkt[i]);
+		}
+	}
+	
+	// sends a new packet to the partner
+	this.send = function send(data){
+		if(this.nextseqnum < this.base+this.N){
+			this.pkt[this.nextseqnum] = new Packet(this.nextseqnum, data);
+			
+			console.log("send packet "+this.nextseqnum);
+			this.pkt[this.nextseqnum].send(this.partner, endToEndDelay);
+			
+			display.send(true, this.pkt[this.nextseqnum]);
+			
+			
+			if(this.base == this.nextseqnum){
+				console.log("first packet in frame: start timer");
+				this.restartTimer();
+			}
+			this.nextseqnum++;
+			
+			return true;
+		}
+		else{
+			console.log("refuse packet");
+			
+			return false;
+		}
+	}
+	
+	// receive an Ack
+	this.receive = function(ack){		
+		if(ack.seqnum < this.base){
+			console.log("ack"+ack.seqnum+" received; "+ack.seqnum+" < senderbase; ignore");
+			return;
+		}
+		
+		console.log("ack"+ack.seqnum+" received");
+		
+		for(var i = this.base; i < ack.seqnum+1; i++)
+			display.confirmSender(i);
+		
+		display.setSenderBase(ack.seqnum+1-this.base, ack.seqnum+1);
+		
+		this.base = ack.seqnum+1;
+		
+		if(this.base == this.nextseqnum){
+			this.timer.stop();
+			display.stopWindowTimer();
+			console.log("all acks received: stop timer");
+		}
+		else{
+			console.log("restart timer");
+			this.restartTimer();
+		}
+	}
+	
+	this.restartTimer = function(){
+		if(this.timer){
+			this.timer.stop();
+			//display.stopWindowTimer();
+		}
+		
+		var self = this;
+		this.timer = new Timer(
+			function(){
+				self.timeoutHandler();
+			}
+			, this.timeout
+		);
+		display.restartWindowTimer(this.timeout);
+	}
+}
+
+function ReceiverGBN(){
+	this.partner; // the end point the packets come from
+	
+	this.expectedseqnum = 1;
+	this.sndpkt = new Packet(0, 'ACK');
+	
+	// receive a packet
+	this.receive = function(packet){
+		if(packet.seqnum == this.expectedseqnum){
+			console.log("packet "+packet.seqnum+" received: send ack");
+			this.sndpkt = new Packet(this.expectedseqnum, 'ACK');
+			display.confirmReceiver(this.sndpkt.seqnum);
+			display.deliverPkg(this.sndpkt.seqnum);
+			
+			this.expectedseqnum++;
+		}
+		else{
+			console.log("packet "+packet.seqnum+" received UNEXPECTED: send old ack");
+		}
+		this.sndpkt.send(this.partner, endToEndDelay);
+		display.send(false, this.sndpkt);
+	}
+}
+
+function SenderSR(N){
+	this.partner; // the end point the packets go to
+	
+	this.base = 1;
+	this.nextseqnum = 1;
+	this.N = N;
+	this.pkt = new Array();
+	
+	this.timeout = 1000; // time until the timeout is fired
+	this.timers = new Array(); // a seperate timer for every slot of the window
+	
+	// this method is called when a timeout occurs
+	this.timeoutHandler = function(seqnum){
+		console.log("timeout");
+		
+		// resend packet and restart timer
+		this.pkt[seqnum].send(this.partner, endToEndDelay);
+		
+		display.send(true, this.pkt[seqnum]);
+		
+		// restart timer
+		var self = this;
+		this.timers[seqnum] = new Timer(
+			function(){
+				self.timeoutHandler(seqnum);
+			}, this.timeout
+		);
+		display.startPkgTimer(seqnum, this.timeout);
+	}
+}
